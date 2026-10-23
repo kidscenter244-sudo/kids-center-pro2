@@ -1,0 +1,6 @@
+{
+  "name": "kidscenter PRO - Smart Math Quiz Platform",
+  "description": "kidscenter PRO - interactive math and mental arithmetic quizzes for students with real-time teacher results.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

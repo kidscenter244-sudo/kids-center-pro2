@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+.math-font {
+  font-family: 'Outfit', 'Tajawal', sans-serif;
+  font-feature-settings: "tnum";
+  font-variant-numeric: tabular-nums;
+}
+
+/* Floating Navbar with rounded border & distinct black shadow as requested */
+.navbar-floating-luxury {
+  box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.22), 0 4px 12px -2px rgba(0, 0, 0, 0.12);
+}
+
+/* Rounded boxes with smooth circular corners & rich black shadow */
+.card-soft-black-shadow {
+  box-shadow: 0 15px 35px -5px rgba(0, 0, 0, 0.16), 0 5px 15px -3px rgba(0, 0, 0, 0.08);
+}
+
+.card-soft-hover:hover {
+  box-shadow: 0 20px 40px -5px rgba(0, 0, 0, 0.22), 0 8px 18px -4px rgba(0, 0, 0, 0.1);
+}
+

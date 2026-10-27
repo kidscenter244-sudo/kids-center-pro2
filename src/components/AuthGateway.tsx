@@ -113,7 +113,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
               setActivePortal('teacher');
               sound.playClick();
             }}
-            className={}
+            className=""
           >
             <ShieldCheck className="w-4 h-4 text-slate-700" />
             <span>Teacher Login</span>

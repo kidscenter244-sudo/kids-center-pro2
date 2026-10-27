@@ -41,6 +41,10 @@ CREATE INDEX IF NOT EXISTS idx_submissions_submitted_at ON public.submissions(su
 ALTER TABLE public.quizzes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.submissions ENABLE ROW LEVEL SECURITY;
 
+-- Table privileges are required in addition to RLS policies.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.quizzes TO anon, authenticated;
+GRANT SELECT, INSERT, DELETE ON TABLE public.submissions TO anon, authenticated;
+
 -- 5. Open Access Policies for Public Student & Teacher Portals (using Anon Key)
 DROP POLICY IF EXISTS "Public select quizzes" ON public.quizzes;
 CREATE POLICY "Public select quizzes" 

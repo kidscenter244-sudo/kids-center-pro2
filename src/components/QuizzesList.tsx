@@ -46,11 +46,15 @@ export const QuizzesList: React.FC<QuizzesListProps> = ({
     setTimeout(() => setCopiedId(null), 2500);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this quiz?')) {
-      quizService.deleteQuiz(id);
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this quiz from the website and Supabase?')) return;
+    try {
+      await quizService.deleteQuiz(id);
       onRefresh();
       sound.playClick();
+    } catch (err) {
+      console.error('Error deleting quiz from Supabase:', err);
+      alert(err instanceof Error ? err.message : 'فشل حذف الاختبار من قاعدة البيانات. حاول مرة أخرى.');
     }
   };
 

@@ -71,13 +71,40 @@ export const QuizzesList: React.FC<QuizzesListProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={onGoToBuilder}
-          className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Create New Quiz</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={async () => {
+              if (!quizzes.length) return;
+              if (!confirm(`تحذير: سيتم حذف جميع الاختبارات (${quizzes.length}) وكل الاستجابات المرتبطة بها نهائيًا من الموقع وSupabase. هل أنت متأكد؟`)) return;
+              if (!confirm('تأكيد أخير: هل تريد فعلًا حذف كل الاختبارات والاستجابات؟')) return;
+              try {
+                for (const quiz of quizzes) {
+                  await quizService.deleteQuiz(quiz.id);
+                }
+                await quizService.clearSubmissions();
+                onRefresh();
+                sound.playClick();
+                alert('تم حذف جميع الاختبارات بنجاح.');
+              } catch (err) {
+                console.error('Error deleting all quizzes:', err);
+                alert(err instanceof Error ? err.message : 'تعذر حذف كل الاختبارات. لم يتم تأكيد الحذف من قاعدة البيانات.');
+                onRefresh();
+              }
+            }}
+            disabled={quizzes.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>مسح الكل</span>
+          </button>
+          <button
+            onClick={onGoToBuilder}
+            className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Create New Quiz</span>
+          </button>
+        </div>
       </div>
 
       {quizzes.length === 0 ? (

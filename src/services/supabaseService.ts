@@ -230,15 +230,29 @@ export async function deleteSubmissionsFromSupabase(quizId?: string): Promise<bo
   const client = getSupabaseClient();
   if (!client) return false;
   try {
-    if (quizId) {
-      const { error } = await client.from('submissions').delete().eq('quiz_id', quizId);
-      if (error) console.warn('Supabase delete submissions by quiz_id failed:', error.message);
-      return !error;
-    } else {
-      const { error } = await client.from('submissions').delete().neq('id', '');
-      if (error) console.warn('Supabase delete all submissions failed:', error.message);
-      return !error;
+    // Read the matching IDs first so a silent RLS-blocked DELETE cannot look successful.
+    let existingQuery = client.from('submissions').select('id');
+    if (quizId) existingQuery = existingQuery.eq('quiz_id', quizId);
+    const { data: existing, error: lookupError } = await existingQuery;
+    if (lookupError || !existing) {
+      console.warn('Could not verify submissions before deletion:', lookupError?.message);
+      return false;
     }
+    if (existing.length === 0) return true;
+
+    let deleteQuery = client.from('submissions').delete().select('id');
+    if (quizId) {
+      deleteQuery = deleteQuery.eq('quiz_id', quizId);
+    } else {
+      deleteQuery = deleteQuery.not('id', 'is', null);
+    }
+    const { data: deleted, error } = await deleteQuery;
+    if (error || !deleted) {
+      console.warn('Supabase delete submissions failed:', error?.message);
+      return false;
+    }
+    const deletedIds = new Set(deleted.map((row) => row.id));
+    return existing.every((row) => deletedIds.has(row.id));
   } catch (err) {
     console.warn('Error deleting submissions from Supabase:', err);
     return false;
@@ -249,9 +263,17 @@ export async function deleteSingleSubmissionFromSupabase(id: string): Promise<bo
   const client = getSupabaseClient();
   if (!client) return false;
   try {
-    const { error } = await client.from('submissions').delete().eq('id', id);
+    const { data: existing, error: lookupError } = await client
+      .from('submissions').select('id').eq('id', id).maybeSingle();
+    if (lookupError) {
+      console.warn('Could not verify submission before deletion:', lookupError.message);
+      return false;
+    }
+    if (!existing) return true;
+    const { data: deleted, error } = await client
+      .from('submissions').delete().eq('id', id).select('id');
     if (error) console.warn('Supabase delete single submission failed:', error.message);
-    return !error;
+    return !error && !!deleted?.some((row) => row.id === id);
   } catch (err) {
     console.warn('Error deleting single submission from Supabase:', err);
     return false;
@@ -262,8 +284,17 @@ export async function deleteQuizFromSupabase(id: string): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return false;
   try {
-    const { error } = await client.from('quizzes').delete().eq('id', id);
-    return !error;
+    const { data: existing, error: lookupError } = await client
+      .from('quizzes').select('id').eq('id', id).maybeSingle();
+    if (lookupError) {
+      console.warn('Could not verify quiz before deletion:', lookupError.message);
+      return false;
+    }
+    if (!existing) return true;
+    const { data: deleted, error } = await client
+      .from('quizzes').delete().eq('id', id).select('id');
+    if (error) console.warn('Supabase delete quiz failed:', error.message);
+    return !error && !!deleted?.some((row) => row.id === id);
   } catch (err) {
     console.warn('Error deleting quiz from Supabase:', err);
     return false;

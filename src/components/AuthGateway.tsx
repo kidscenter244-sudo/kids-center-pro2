@@ -101,7 +101,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
               setActivePortal('student');
               sound.playClick();
             }}
-            className={}
+            className=""
           >
             <User className="w-4 h-4 text-indigo-600" />
             <span>Student Portal</span>

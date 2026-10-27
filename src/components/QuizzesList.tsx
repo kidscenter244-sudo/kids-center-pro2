@@ -194,10 +194,12 @@ export const QuizzesList: React.FC<QuizzesListProps> = ({
 
                     <button
                       onClick={() => handleDelete(quiz.id)}
-                      title="Delete Quiz"
-                      className="p-2 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                      title="مسح الاختبار"
+                      aria-label={`مسح الاختبار ${quiz.config.title}`}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 hover:text-rose-800 font-bold text-xs transition-colors cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
+                      <span>مسح الاختبار</span>
                     </button>
                   </div>
 

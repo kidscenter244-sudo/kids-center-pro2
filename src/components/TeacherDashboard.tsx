@@ -199,6 +199,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         sound.playClick();
       } catch (err) {
         console.error('Error during deletion:', err);
+        alert(err instanceof Error ? err.message : 'فشل مسح الاستجابات من قاعدة البيانات. حاول مرة أخرى.');
       } finally {
         setIsDeleting(false);
       }
@@ -214,6 +215,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         sound.playClick();
       } catch (err) {
         console.error('Error deleting single submission:', err);
+        alert(err instanceof Error ? err.message : 'فشل مسح استجابة الطالب من قاعدة البيانات. حاول مرة أخرى.');
       }
     }
   };

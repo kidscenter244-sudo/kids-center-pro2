@@ -224,3 +224,48 @@ export async function fetchSubmissionsFromSupabase(quizId?: string): Promise<Qui
     return null;
   }
 }
+
+
+export async function deleteSubmissionsFromSupabase(quizId?: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    if (quizId) {
+      const { error } = await client.from('submissions').delete().eq('quiz_id', quizId);
+      if (error) console.warn('Supabase delete submissions by quiz_id failed:', error.message);
+      return !error;
+    } else {
+      const { error } = await client.from('submissions').delete().neq('id', '');
+      if (error) console.warn('Supabase delete all submissions failed:', error.message);
+      return !error;
+    }
+  } catch (err) {
+    console.warn('Error deleting submissions from Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteSingleSubmissionFromSupabase(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('submissions').delete().eq('id', id);
+    if (error) console.warn('Supabase delete single submission failed:', error.message);
+    return !error;
+  } catch (err) {
+    console.warn('Error deleting single submission from Supabase:', err);
+    return false;
+  }
+}
+
+export async function deleteQuizFromSupabase(id: string): Promise<boolean> {
+  const client = getSupabaseClient();
+  if (!client) return false;
+  try {
+    const { error } = await client.from('quizzes').delete().eq('id', id);
+    return !error;
+  } catch (err) {
+    console.warn('Error deleting quiz from Supabase:', err);
+    return false;
+  }
+}

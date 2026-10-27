@@ -22,13 +22,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
   const [quizCode, setQuizCode] = useState(initialQuizCode);
   const [studentError, setStudentError] = useState('');
 
-  // Teacher credentials state
-  const [teacherEmail, setTeacherEmail] = useState('');
+  // Teacher credentials state (Passcode only)
   const [teacherPassword, setTeacherPassword] = useState('');
   const [teacherError, setTeacherError] = useState('');
 
-  const VALID_TEACHER_EMAIL = 'teacher@kidscenter.com';
-  const VALID_TEACHER_PASSWORD = 'kids123';
+  const VALID_TEACHER_PASSWORD = '01068545095';
 
   const handleStudentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,14 +57,13 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
     e.preventDefault();
     setTeacherError('');
 
-    const cleanEmail = teacherEmail.trim().toLowerCase();
     const cleanPass = teacherPassword.trim();
 
-    if (cleanEmail === VALID_TEACHER_EMAIL && cleanPass === VALID_TEACHER_PASSWORD) {
+    if (cleanPass === VALID_TEACHER_PASSWORD) {
       sound.playClick();
       onTeacherLogin();
     } else {
-      setTeacherError('Invalid teacher email or password');
+      setTeacherError('رمز المرور غير صحيح / Incorrect passcode');
       sound.playIncorrect();
     }
   };
@@ -104,11 +101,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
               setActivePortal('student');
               sound.playClick();
             }}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-              activePortal === 'student'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
+            className={}
           >
             <User className="w-4 h-4 text-indigo-600" />
             <span>Student Portal</span>
@@ -120,11 +113,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
               setActivePortal('teacher');
               sound.playClick();
             }}
-            className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-              activePortal === 'teacher'
-                ? 'bg-white text-slate-900 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800'
-            }`}
+            className={}
           >
             <ShieldCheck className="w-4 h-4 text-slate-700" />
             <span>Teacher Login</span>
@@ -189,36 +178,22 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
           </form>
         )}
 
-        {/* 2. TEACHER PORTAL (Email & Password) */}
+        {/* 2. TEACHER PORTAL (Passcode Only - Never Revealed in UI) */}
         {activePortal === 'teacher' && (
           <form onSubmit={handleTeacherSubmit} className="space-y-4 animate-in fade-in duration-200">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-slate-700" />
-                <span>Teacher Email:</span>
-              </label>
-              <input
-                type="email"
-                value={teacherEmail}
-                onChange={(e) => setTeacherEmail(e.target.value)}
-                placeholder="teacher@kidscenter.com"
-                required
-                className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white rounded-2xl px-4 py-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 font-medium"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-slate-700" />
-                <span>Password:</span>
+                <span>Teacher Access Passcode:</span>
               </label>
               <input
                 type="password"
                 value={teacherPassword}
                 onChange={(e) => setTeacherPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="••••••••••••"
                 required
-                className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white rounded-2xl px-4 py-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400"
+                autoComplete="current-password"
+                className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white rounded-2xl px-4 py-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 font-mono tracking-widest text-center"
               />
             </div>
 
@@ -235,19 +210,6 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
               <span>Teacher Login</span>
               <ArrowRight className="w-4 h-4" />
             </button>
-
-            {/* Quick credentials hint */}
-            <div className="p-3 rounded-2xl bg-indigo-50/60 border border-indigo-100/80 text-[11px] text-slate-600 space-y-1">
-              <span className="font-bold text-indigo-900 block">Default Teacher Credentials:</span>
-              <div className="flex items-center justify-between">
-                <span>Email:</span>
-                <span className="font-mono font-bold text-indigo-700">teacher@kidscenter.com</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Password:</span>
-                <span className="font-mono font-bold text-indigo-700">kids123</span>
-              </div>
-            </div>
           </form>
         )}
 

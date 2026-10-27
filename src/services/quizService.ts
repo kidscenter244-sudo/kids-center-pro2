@@ -4,7 +4,10 @@ import {
   pushQuizToSupabase, 
   fetchQuizzesFromSupabase, 
   pushSubmissionToSupabase, 
-  fetchSubmissionsFromSupabase 
+  fetchSubmissionsFromSupabase,
+  deleteSubmissionsFromSupabase,
+  deleteSingleSubmissionFromSupabase,
+  deleteQuizFromSupabase
 } from './supabaseService';
 
 const QUIZZES_STORAGE_KEY = 'kidscenter_pro_quizzes_v4';
@@ -114,7 +117,7 @@ export const quizService = {
       }
 
       const remoteSubs = await fetchSubmissionsFromSupabase();
-      if (remoteSubs && remoteSubs.length > 0) {
+      if (remoteSubs !== null) {
         localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(remoteSubs));
       }
       notifySync();
@@ -157,10 +160,19 @@ export const quizService = {
     return newQuiz;
   },
 
-  deleteQuiz(id: string) {
+  async deleteQuiz(id: string): Promise<void> {
     const quizzes = this.getQuizzes().filter((q) => q.id !== id);
     localStorage.setItem(QUIZZES_STORAGE_KEY, JSON.stringify(quizzes));
+    
+    // Also remove associated submissions locally
+    const submissions = this.getSubmissions().filter((s) => s.quizId !== id);
+    localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(submissions));
+    
     notifySync();
+
+    // Delete from Supabase
+    deleteQuizFromSupabase(id).catch(() => {});
+    deleteSubmissionsFromSupabase(id).catch(() => {});
   },
 
   getSubmissions(quizId?: string): QuizSubmission[] {
@@ -194,7 +206,7 @@ export const quizService = {
     return fullSubmission;
   },
 
-  clearSubmissions(quizId?: string) {
+  async clearSubmissions(quizId?: string): Promise<void> {
     if (quizId) {
       const remaining = this.getSubmissions().filter((s) => s.quizId !== quizId);
       localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(remaining));
@@ -202,5 +214,24 @@ export const quizService = {
       localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify([]));
     }
     notifySync();
+
+    // Sync deletion to Supabase so it does not resurrect on page reload
+    try {
+      await deleteSubmissionsFromSupabase(quizId);
+    } catch (err) {
+      console.warn('Failed to clear submissions in Supabase:', err);
+    }
+  },
+
+  async deleteSubmission(submissionId: string): Promise<void> {
+    const remaining = this.getSubmissions().filter((s) => s.id !== submissionId);
+    localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(remaining));
+    notifySync();
+
+    try {
+      await deleteSingleSubmissionFromSupabase(submissionId);
+    } catch (err) {
+      console.warn('Failed to delete single submission in Supabase:', err);
+    }
   },
 };

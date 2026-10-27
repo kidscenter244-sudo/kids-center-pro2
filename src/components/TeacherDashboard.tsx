@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Users, 
   Trophy, 
@@ -13,68 +13,123 @@ import {
   XCircle, 
   Percent, 
   X,
-  Database
+  Database,
+  Filter,
+  BookOpen
 } from 'lucide-react';
-import { QuizSubmission } from '../types/quiz';
+import { Quiz, QuizSubmission } from '../types/quiz';
 import { quizService } from '../services/quizService';
 import { SUPABASE_SQL_SCHEMA } from '../services/supabaseService';
 import { sound } from '../utils/audio';
 
 interface TeacherDashboardProps {
   submissions: QuizSubmission[];
+  quizzes?: Quiz[];
+  selectedQuizFilter?: string;
+  onSelectQuizFilter?: (quizId: string) => void;
   onRefresh: () => void;
   onGoToBuilder: () => void;
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   submissions,
+  quizzes = [],
+  selectedQuizFilter = 'all',
+  onSelectQuizFilter,
   onRefresh,
   onGoToBuilder,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedQuizFilter, setSelectedQuizFilter] = useState<string>('all');
+  const [internalFilter, setInternalFilter] = useState<string>(selectedQuizFilter);
   const [inspectSubmission, setInspectSubmission] = useState<QuizSubmission | null>(null);
   const [copiedReport, setCopiedReport] = useState(false);
   const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
+  useEffect(() => {
+    if (selectedQuizFilter !== undefined) {
+      setInternalFilter(selectedQuizFilter);
+    }
+  }, [selectedQuizFilter]);
+
+  const handleFilterChange = (quizId: string) => {
+    setInternalFilter(quizId);
+    onSelectQuizFilter?.(quizId);
+    sound.playClick();
+  };
+
+  // Combine quizzes from props and quizzes referenced in submissions
+  const allAvailableQuizzes = useMemo(() => {
+    const map = new Map<string, { id: string; title: string; code: string }>();
+    quizzes.forEach((q) => {
+      map.set(q.id, { id: q.id, title: q.config.title || `Quiz ${q.code}`, code: q.code });
+    });
+    submissions.forEach((s) => {
+      if (!map.has(s.quizId)) {
+        map.set(s.quizId, { id: s.quizId, title: s.quizTitle, code: '' });
+      }
+    });
+    return Array.from(map.values());
+  }, [quizzes, submissions]);
+
+  const currentSelectedQuiz = useMemo(() => {
+    if (internalFilter === 'all') return null;
+    return allAvailableQuizzes.find((q) => q.id === internalFilter) || null;
+  }, [allAvailableQuizzes, internalFilter]);
+
+  // Submissions filtered by chosen quiz and search query
   const filteredSubmissions = useMemo(() => {
     return submissions.filter((sub) => {
       const matchName = sub.studentName.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchQuiz = selectedQuizFilter === 'all' || sub.quizId === selectedQuizFilter;
+      const matchQuiz = internalFilter === 'all' || sub.quizId === internalFilter;
       return matchName && matchQuiz;
     });
-  }, [submissions, searchTerm, selectedQuizFilter]);
+  }, [submissions, searchTerm, internalFilter]);
 
-  const uniqueQuizzes = useMemo(() => {
-    const map = new Map<string, string>();
-    submissions.forEach((s) => map.set(s.quizId, s.quizTitle));
-    return Array.from(map.entries()).map(([id, title]) => ({ id, title }));
+  // Specific submissions count per quiz
+  const submissionsCountByQuiz = useMemo(() => {
+    const counts: Record<string, number> = {};
+    submissions.forEach((s) => {
+      counts[s.quizId] = (counts[s.quizId] || 0) + 1;
+    });
+    return counts;
   }, [submissions]);
 
-  const totalSubmissions = submissions.length;
-  const averageScorePercent = useMemo(() => {
-    if (totalSubmissions === 0) return 0;
-    const sum = submissions.reduce((acc, curr) => acc + curr.percentage, 0);
-    return Math.round(sum / totalSubmissions);
-  }, [submissions, totalSubmissions]);
+  // KPIs computed for the currently filtered view
+  const currentTotal = filteredSubmissions.length;
+  const currentAverageAccuracy = useMemo(() => {
+    if (currentTotal === 0) return 0;
+    const sum = filteredSubmissions.reduce((acc, curr) => acc + curr.percentage, 0);
+    return Math.round(sum / currentTotal);
+  }, [filteredSubmissions, currentTotal]);
 
   const topStudent = useMemo(() => {
-    if (totalSubmissions === 0) return null;
-    return [...submissions].sort((a, b) => b.score - a.score || a.timeSpentSeconds - b.timeSpentSeconds)[0];
-  }, [submissions, totalSubmissions]);
+    if (currentTotal === 0) return null;
+    return [...filteredSubmissions].sort(
+      (a, b) => b.score - a.score || a.timeSpentSeconds - b.timeSpentSeconds
+    )[0];
+  }, [filteredSubmissions, currentTotal]);
 
   const fastestStudent = useMemo(() => {
-    if (totalSubmissions === 0) return null;
-    return [...submissions].sort((a, b) => a.timeSpentSeconds - b.timeSpentSeconds)[0];
-  }, [submissions, totalSubmissions]);
+    if (currentTotal === 0) return null;
+    return [...filteredSubmissions].sort((a, b) => a.timeSpentSeconds - b.timeSpentSeconds)[0];
+  }, [filteredSubmissions, currentTotal]);
 
   const handleExportCSV = () => {
-    if (submissions.length === 0) return;
+    if (filteredSubmissions.length === 0) return;
     sound.playClick();
 
-    const headers = ['Student Name', 'Quiz Title', 'Score', 'Total Questions', 'Percentage', 'Time in Seconds', 'Submitted At'];
-    const rows = submissions.map((s) => [
+    const headers = [
+      'Student Name',
+      'Quiz Title',
+      'Score',
+      'Total Questions',
+      'Percentage',
+      'Time in Seconds',
+      'Submitted At',
+    ];
+    const rows = filteredSubmissions.map((s) => [
       `"${s.studentName.replace(/"/g, '""')}"`,
       `"${s.quizTitle.replace(/"/g, '""')}"`,
       s.score,
@@ -89,22 +144,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `kidscenter_mental_math_scores_${Date.now()}.csv`);
+    link.setAttribute('download', `kidscenter_quiz_results_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const handleCopyReport = () => {
-    if (submissions.length === 0) return;
+    if (filteredSubmissions.length === 0) return;
     sound.playClick();
 
-    let text = `📊 kidscenter PRO - Mental Math Quiz Results Report:\n`;
-    text += `Total Completed Students: ${submissions.length}\n`;
-    text += `Average Score: ${averageScorePercent}%\n\n`;
+    const scopeTitle = currentSelectedQuiz 
+      ? `Quiz "${currentSelectedQuiz.title}"` 
+      : `All Quizzes Combined`;
+
+    let text = `📊 kidscenter PRO - Mental Math Quiz Results Report\n`;
+    text += `Target: ${scopeTitle}\n`;
+    text += `Total Students: ${filteredSubmissions.length}\n`;
+    text += `Average Score: ${currentAverageAccuracy}%\n\n`;
     text += `🏆 Student Leaderboard:\n`;
 
-    submissions.forEach((s, idx) => {
+    filteredSubmissions.forEach((s, idx) => {
       text += `${idx + 1}. ${s.studentName} - Score: ${s.score}/${s.totalQuestions} (${s.percentage}%) - in ${Math.floor(s.timeSpentSeconds / 60)}m ${s.timeSpentSeconds % 60}s\n`;
     });
 
@@ -120,11 +180,41 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setTimeout(() => setCopiedSql(false), 2500);
   };
 
-  const handleClear = () => {
-    if (confirm('Are you sure you want to clear all student submission records?')) {
-      quizService.clearSubmissions();
-      onRefresh();
-      sound.playClick();
+  // Delete all submissions for the selected quiz (or all quizzes) and permanently sync with Supabase
+  const handleClearSubmissions = async () => {
+    const isSpecific = internalFilter !== 'all' && currentSelectedQuiz;
+    const confirmMsg = isSpecific
+      ? `هل أنت متأكد من مسح جميع استجابات اختبار "${currentSelectedQuiz.title}"؟\nسيتم مسحها نهائياً من الموقع وقاعدة بيانات سوبابيس ولن تظهر مرة أخرى حتى بعد إعادة تحميل الصفحة.`
+      : `هل أنت متأكد من مسح جميع استجابات الطلاب لجميع الاختبارات؟\nسيتم مسحها نهائياً من الموقع ومن قاعدة بيانات سوبابيس.`;
+
+    if (confirm(confirmMsg)) {
+      try {
+        setIsDeleting(true);
+        if (isSpecific) {
+          await quizService.clearSubmissions(currentSelectedQuiz.id);
+        } else {
+          await quizService.clearSubmissions();
+        }
+        onRefresh();
+        sound.playClick();
+      } catch (err) {
+        console.error('Error during deletion:', err);
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  };
+
+  // Delete a single student's submission from both local storage and Supabase
+  const handleDeleteSingleSubmission = async (sub: QuizSubmission) => {
+    if (confirm(`هل أنت متأكد من مسح استجابة الطالب "${sub.studentName}"؟\nسيتم مسحها نهائياً من الموقع وسوبابيس.`)) {
+      try {
+        await quizService.deleteSubmission(sub.id);
+        onRefresh();
+        sound.playClick();
+      } catch (err) {
+        console.error('Error deleting single submission:', err);
+      }
     }
   };
 
@@ -180,7 +270,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       )}
 
-      {/* Inspector Modal */}
+      {/* Student Answers Inspection Modal */}
       {inspectSubmission && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 rounded-[32px] w-full max-w-xl overflow-hidden card-soft-black-shadow">
@@ -255,10 +345,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-            Student Submissions & Real-Time Results
+            Student Submissions & Results
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Student scores and detailed answers appear here instantly as they finish
+            {currentSelectedQuiz
+              ? `Displaying specific submissions for: "${currentSelectedQuiz.title}"`
+              : 'Displaying submissions across all quizzes'}
           </p>
         </div>
 
@@ -266,7 +358,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           <button
             onClick={() => setIsSqlModalOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors card-soft-black-shadow cursor-pointer"
-            title="View & copy dedicated Supabase SQL schema"
+            title="View Supabase SQL schema"
           >
             <Database className="w-3.5 h-3.5 text-emerald-600" />
             <span>Supabase SQL</span>
@@ -285,7 +377,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           <button
             onClick={handleCopyReport}
-            disabled={submissions.length === 0}
+            disabled={filteredSubmissions.length === 0}
             className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 disabled:opacity-40 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors card-soft-black-shadow cursor-pointer"
           >
             {copiedReport ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-slate-600" />}
@@ -294,7 +386,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           <button
             onClick={handleExportCSV}
-            disabled={submissions.length === 0}
+            disabled={filteredSubmissions.length === 0}
             className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-slate-900 hover:bg-slate-800 disabled:opacity-40 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
@@ -303,15 +395,126 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* QUIZ SELECTOR BAR (Tabs per Quiz) */}
+      <div className="bg-white border border-slate-200/90 rounded-[28px] p-3 mb-6 card-soft-black-shadow">
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+            <Filter className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Select Quiz to View Submissions (تصفية حسب الاختبار):</span>
+          </div>
+          <span className="text-[11px] text-slate-400 font-medium">
+            Total Submissions: {submissions.length}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+          {/* Option: All Quizzes */}
+          <button
+            onClick={() => handleFilterChange('all')}
+            className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 shrink-0 ${
+              internalFilter === 'all'
+                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            <span>All Quizzes (جميع الاستجابات)</span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+              internalFilter === 'all' ? 'bg-white/20 text-white' : 'bg-white text-slate-800'
+            }`}>
+              {submissions.length}
+            </span>
+          </button>
+
+          {/* Option per individual Quiz */}
+          {allAvailableQuizzes.map((q) => {
+            const count = submissionsCountByQuiz[q.id] || 0;
+            const isSelected = internalFilter === q.id;
+            return (
+              <button
+                key={q.id}
+                onClick={() => handleFilterChange(q.id)}
+                className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 shrink-0 border ${
+                  isSelected
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/20'
+                    : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                }`}
+              >
+                {q.code && (
+                  <span className={`px-1.5 py-0.5 rounded-lg text-[10px] font-mono uppercase ${
+                    isSelected ? 'bg-white/20 text-white' : 'bg-indigo-50 text-indigo-700'
+                  }`}>
+                    {q.code}
+                  </span>
+                )}
+                <span className="max-w-[180px] truncate">{q.title}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                  isSelected ? 'bg-white text-indigo-700 font-black' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Active Filter Info Banner with Clear Button */}
+      {currentSelectedQuiz && (
+        <div className="bg-indigo-50/70 border border-indigo-100 rounded-[24px] p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 font-bold">
+              <BookOpen className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-indigo-900">
+                  Active Quiz: {currentSelectedQuiz.title}
+                </span>
+                {currentSelectedQuiz.code && (
+                  <span className="px-2 py-0.5 rounded-md bg-white text-indigo-700 font-mono text-[10px] font-bold border border-indigo-200">
+                    {currentSelectedQuiz.code}
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-indigo-700/80">
+                Viewing only the {currentTotal} submissions belonging specifically to this quiz.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {currentTotal > 0 && (
+              <button
+                onClick={handleClearSubmissions}
+                disabled={isDeleting}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeleting ? 'Clearing...' : 'Clear This Quiz Submissions'}</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => handleFilterChange('all')}
+              className="px-3 py-1.5 rounded-xl bg-white text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-bold transition-colors cursor-pointer"
+            >
+              Show All Quizzes
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* KPI Cards (Accurate to current filter) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div className="bg-white border border-slate-200/90 p-5 rounded-[28px] card-soft-black-shadow">
           <div className="flex items-center justify-between text-slate-400 mb-1">
             <span className="text-xs font-bold text-slate-600">Total Completed</span>
             <Users className="w-4 h-4 text-indigo-500" />
           </div>
-          <div className="text-3xl font-black math-font text-slate-900">{totalSubmissions}</div>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">students finished</span>
+          <div className="text-3xl font-black math-font text-slate-900">{currentTotal}</div>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">
+            {currentSelectedQuiz ? 'in this quiz' : 'across all quizzes'}
+          </span>
         </div>
 
         <div className="bg-white border border-slate-200/90 p-5 rounded-[28px] card-soft-black-shadow">
@@ -319,8 +522,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <span className="text-xs font-bold text-slate-600">Average Accuracy</span>
             <Percent className="w-4 h-4 text-emerald-500" />
           </div>
-          <div className="text-3xl font-black math-font text-emerald-600">{averageScorePercent}%</div>
-          <span className="text-[10px] text-slate-400 mt-0.5 block">overall average</span>
+          <div className="text-3xl font-black math-font text-emerald-600">{currentAverageAccuracy}%</div>
+          <span className="text-[10px] text-slate-400 mt-0.5 block">
+            {currentSelectedQuiz ? 'quiz average' : 'overall average'}
+          </span>
         </div>
 
         <div className="bg-white border border-slate-200/90 p-5 rounded-[28px] card-soft-black-shadow">
@@ -332,7 +537,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             {topStudent ? topStudent.studentName : '—'}
           </div>
           <span className="text-[10px] text-slate-400 math-font mt-0.5 block">
-            {topStudent ? `${topStudent.score}/${topStudent.totalQuestions} (${topStudent.percentage}%)` : 'No submissions yet'}
+            {topStudent ? `${topStudent.score}/${topStudent.totalQuestions} (${topStudent.percentage}%)` : 'No submissions'}
           </span>
         </div>
 
@@ -345,7 +550,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             {fastestStudent ? fastestStudent.studentName : '—'}
           </div>
           <span className="text-[10px] text-slate-400 math-font mt-0.5 block">
-            {fastestStudent ? `in ${fastestStudent.timeSpentSeconds} seconds` : 'No submissions yet'}
+            {fastestStudent ? `in ${fastestStudent.timeSpentSeconds}s` : 'No submissions'}
           </span>
         </div>
       </div>
@@ -363,25 +568,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <select
-            value={selectedQuizFilter}
-            onChange={(e) => setSelectedQuizFilter(e.target.value)}
-            className="bg-slate-50 border border-slate-200 text-xs text-slate-700 rounded-2xl px-3 py-2 outline-none"
-          >
-            <option value="all">All Quizzes ({submissions.length})</option>
-            {uniqueQuizzes.map((q) => (
-              <option key={q.id} value={q.id}>{q.title}</option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+          <span className="text-xs text-slate-500 font-medium">
+            Showing <strong className="text-slate-800">{filteredSubmissions.length}</strong> of {submissions.length} results
+          </span>
 
-          {submissions.length > 0 && (
+          {filteredSubmissions.length > 0 && (
             <button
-              onClick={handleClear}
-              className="p-2 text-rose-600 hover:text-rose-700 rounded-2xl bg-rose-50 hover:bg-rose-100 transition-colors cursor-pointer"
-              title="Clear all submissions"
+              onClick={handleClearSubmissions}
+              disabled={isDeleting}
+              className="flex items-center gap-1.5 px-3 py-2 text-rose-600 hover:text-rose-700 rounded-2xl bg-rose-50 hover:bg-rose-100 transition-colors cursor-pointer text-xs font-bold"
+              title={currentSelectedQuiz ? "Clear this quiz's submissions" : "Clear all submissions"}
             >
-              <Trash2 className="w-4 h-4" />
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{currentSelectedQuiz ? 'Clear Quiz' : 'Clear All'}</span>
             </button>
           )}
         </div>
@@ -390,9 +590,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       {/* Submissions List */}
       {filteredSubmissions.length === 0 ? (
         <div className="bg-white border border-slate-200/90 rounded-[32px] p-10 text-center card-soft-black-shadow">
-          <h3 className="text-base font-bold text-slate-900 mb-1">No Student Submissions Yet</h3>
+          <h3 className="text-base font-bold text-slate-900 mb-1">
+            {currentSelectedQuiz
+              ? `No Submissions Yet for "${currentSelectedQuiz.title}"`
+              : 'No Student Submissions Yet'}
+          </h3>
           <p className="text-xs text-slate-500 mb-4 max-w-sm mx-auto">
-            Share the quiz link or code with your students. Each student's name, score, and answers will appear here in real-time.
+            Share the quiz link or access code with students. Results and student responses will appear here in real-time.
           </p>
           <button
             onClick={onGoToBuilder}
@@ -414,7 +618,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <th className="py-3 px-4">Accuracy</th>
                   <th className="py-3 px-4">Time Taken</th>
                   <th className="py-3 px-4">Submitted At</th>
-                  <th className="py-3 px-4 text-center">Action</th>
+                  <th className="py-3 px-4 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -442,16 +646,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       {new Date(sub.submittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => {
-                          setInspectSubmission(sub);
-                          sound.playClick();
-                        }}
-                        className="px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Eye className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>View Answers</span>
-                      </button>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setInspectSubmission(sub);
+                            sound.playClick();
+                          }}
+                          className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                          title="View detailed student answers"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>View</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteSingleSubmission(sub)}
+                          className="p-1 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                          title="Delete this student submission permanently"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

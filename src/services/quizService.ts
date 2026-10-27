@@ -112,7 +112,8 @@ export const quizService = {
   async syncWithSupabase(): Promise<void> {
     try {
       const remoteQuizzes = await fetchQuizzesFromSupabase();
-      if (remoteQuizzes && remoteQuizzes.length > 0) {
+      // An empty remote list is meaningful: keep local deleted quizzes deleted.
+      if (remoteQuizzes !== null) {
         localStorage.setItem(QUIZZES_STORAGE_KEY, JSON.stringify(remoteQuizzes));
       }
 
@@ -161,18 +162,18 @@ export const quizService = {
   },
 
   async deleteQuiz(id: string): Promise<void> {
+    // Persist the deletion first. Do not remove the local item if Supabase rejects it.
+    const deleted = await deleteQuizFromSupabase(id);
+    if (!deleted) {
+      throw new Error('تعذر حذف الاختبار من Supabase. لم يتم تغيير البيانات المحلية.');
+    }
+
+    // The database schema uses ON DELETE CASCADE for the quiz's submissions.
     const quizzes = this.getQuizzes().filter((q) => q.id !== id);
     localStorage.setItem(QUIZZES_STORAGE_KEY, JSON.stringify(quizzes));
-    
-    // Also remove associated submissions locally
     const submissions = this.getSubmissions().filter((s) => s.quizId !== id);
     localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(submissions));
-    
     notifySync();
-
-    // Delete from Supabase
-    deleteQuizFromSupabase(id).catch(() => {});
-    deleteSubmissionsFromSupabase(id).catch(() => {});
   },
 
   getSubmissions(quizId?: string): QuizSubmission[] {
@@ -207,31 +208,27 @@ export const quizService = {
   },
 
   async clearSubmissions(quizId?: string): Promise<void> {
-    if (quizId) {
-      const remaining = this.getSubmissions().filter((s) => s.quizId !== quizId);
-      localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(remaining));
-    } else {
-      localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify([]));
+    // Confirm the database operation succeeded before changing the UI/local cache.
+    const deleted = await deleteSubmissionsFromSupabase(quizId);
+    if (!deleted) {
+      throw new Error('تعذر حذف الاستجابات من Supabase. لم يتم تغيير البيانات المحلية.');
     }
-    notifySync();
 
-    // Sync deletion to Supabase so it does not resurrect on page reload
-    try {
-      await deleteSubmissionsFromSupabase(quizId);
-    } catch (err) {
-      console.warn('Failed to clear submissions in Supabase:', err);
-    }
+    const remaining = quizId
+      ? this.getSubmissions().filter((s) => s.quizId !== quizId)
+      : [];
+    localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(remaining));
+    notifySync();
   },
 
   async deleteSubmission(submissionId: string): Promise<void> {
+    const deleted = await deleteSingleSubmissionFromSupabase(submissionId);
+    if (!deleted) {
+      throw new Error('تعذر حذف الاستجابة من Supabase. لم يتم تغيير البيانات المحلية.');
+    }
+
     const remaining = this.getSubmissions().filter((s) => s.id !== submissionId);
     localStorage.setItem(SUBMISSIONS_STORAGE_KEY, JSON.stringify(remaining));
     notifySync();
-
-    try {
-      await deleteSingleSubmissionFromSupabase(submissionId);
-    } catch (err) {
-      console.warn('Failed to delete single submission in Supabase:', err);
-    }
   },
 };

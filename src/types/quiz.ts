@@ -3,11 +3,14 @@ export interface QuestionTerm {
   isNegative: boolean;
 }
 
+export type FormulaType = 'simple' | 'five' | 'normal';
+
 export interface QuestionGroup {
   id: string;
   numbersCount: number; // How many numbers per question (e.g. 3 rows, 4 rows, 5 rows)
   digitsCount: number;  // How many digits per number (e.g. 1 digit, 2 digits, 3 digits)
   questionCount: number; // e.g. 10 questions
+  formulaType?: FormulaType; // 'simple' (بسيطة) | 'five' (معادلات 5) | 'normal' (عادية زي الوقتي)
 }
 
 export interface QuizConfig {
@@ -26,6 +29,7 @@ export interface Question {
   digitsCount: number;
   groupId?: string;
   groupLabel?: string;
+  formulaType?: FormulaType;
 }
 
 export interface Quiz {

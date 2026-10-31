@@ -169,18 +169,29 @@ export const QuizzesList: React.FC<QuizzesListProps> = ({
                         </strong>
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                      <Layers className="w-3.5 h-3.5 text-slate-400" />
-                      {quiz.config.groups && quiz.config.groups.length > 0 ? (
-                        <span>
-                          Sections:{' '}
-                          {quiz.config.groups
-                            .map((g) => `${g.numbersCount}R·${g.digitsCount}D (${g.questionCount}Q)`)
-                            .join(' + ')}
-                        </span>
-                      ) : (
-                        <span>Vertical Mental Math Quiz</span>
-                      )}
+                    <div className="flex items-start gap-1.5 text-[11px] text-slate-500">
+                      <Layers className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <strong className="text-slate-700">Sections:</strong>
+                        {quiz.config.groups && quiz.config.groups.length > 0 ? (
+                          quiz.config.groups.map((g, gIdx) => {
+                            const fType = g.formulaType || 'normal';
+                            const fName = fType === 'simple' ? 'بسيطة' : fType === 'five' ? 'معادلات 5' : 'عادية';
+                            const badgeStyle = fType === 'simple'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : fType === 'five'
+                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              : 'bg-slate-100 text-slate-700 border-slate-200';
+                            return (
+                              <span key={gIdx} className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold border ${badgeStyle}`}>
+                                {g.numbersCount}R·{g.digitsCount}D ({g.questionCount}Q · {fName})
+                              </span>
+                            );
+                          })
+                        ) : (
+                          <span>Vertical Mental Math Quiz</span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

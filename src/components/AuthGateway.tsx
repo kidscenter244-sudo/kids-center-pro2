@@ -101,7 +101,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
               setActivePortal('student');
               sound.playClick();
             }}
-            className=""
+            className={
+              activePortal === 'student'
+                ? 'flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-white text-slate-900 shadow-sm cursor-pointer'
+                : 'flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-500 hover:text-slate-800 cursor-pointer'
+            }
           >
             <User className="w-4 h-4 text-indigo-600" />
             <span>Student Portal</span>
@@ -113,7 +117,11 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({
               setActivePortal('teacher');
               sound.playClick();
             }}
-            className=""
+            className={
+              activePortal === 'teacher'
+                ? 'flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 bg-white text-slate-900 shadow-sm cursor-pointer'
+                : 'flex-1 py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 text-slate-500 hover:text-slate-800 cursor-pointer'
+            }
           >
             <ShieldCheck className="w-4 h-4 text-slate-700" />
             <span>Teacher Login</span>

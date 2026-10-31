@@ -465,13 +465,24 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({
         <div className="bg-white border border-slate-200/90 rounded-[36px] p-6 sm:p-8 card-soft-black-shadow relative">
           
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold text-slate-400">
                 Question <strong className="text-slate-800 math-font">#{currentIndex + 1}</strong>
               </span>
               {currentQuestion.groupLabel && (
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-700">
                   {currentQuestion.groupLabel}
+                </span>
+              )}
+              {currentQuestion.formulaType && (
+                <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                  currentQuestion.formulaType === 'simple'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : currentQuestion.formulaType === 'five'
+                    ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                    : 'bg-slate-100 text-slate-700 border-slate-200'
+                }`}>
+                  {currentQuestion.formulaType === 'simple' ? '🟢 بسيطة' : currentQuestion.formulaType === 'five' ? '🖐️ معادلات 5' : '⚡ عادية'}
                 </span>
               )}
             </div>

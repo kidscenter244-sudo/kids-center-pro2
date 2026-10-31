@@ -18,8 +18,14 @@ import { quizService, subscribeToSync } from './services/quizService';
 const TEACHER_AUTH_KEY = 'kidscenter_pro_teacher_auth_v1';
 
 export default function App() {
-  // 1. Splash screen for 2 seconds
-  const [showSplash, setShowSplash] = useState(true);
+  // 1. Splash screen for 2 seconds (skipped on refresh if teacher already logged in)
+  const [showSplash, setShowSplash] = useState(() => {
+    try {
+      return localStorage.getItem(TEACHER_AUTH_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
 
   // 2. Auth & Navigation state (Persisted in localStorage)
   const [isTeacherLoggedIn, setIsTeacherLoggedIn] = useState<boolean>(() => {
@@ -29,7 +35,22 @@ export default function App() {
       return false;
     }
   });
-  const [activeTeacherTab, setActiveTeacherTab] = useState<'builder' | 'dashboard' | 'quizzes'>('builder');
+  const [activeTeacherTab, setActiveTeacherTabState] = useState<'builder' | 'dashboard' | 'quizzes'>(() => {
+    try {
+      const saved = localStorage.getItem('kidscenter_active_tab');
+      if (saved === 'builder' || saved === 'dashboard' || saved === 'quizzes') {
+        return saved;
+      }
+    } catch {}
+    return 'dashboard';
+  });
+
+  const setActiveTeacherTab = (tab: 'builder' | 'dashboard' | 'quizzes') => {
+    try {
+      localStorage.setItem('kidscenter_active_tab', tab);
+    } catch {}
+    setActiveTeacherTabState(tab);
+  };
   const [dashboardQuizFilter, setDashboardQuizFilter] = useState<string>('all');
 
   // Student exam state

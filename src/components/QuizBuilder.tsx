@@ -7,11 +7,13 @@ import {
   Sliders, 
   ArrowRight,
   Calculator,
-  Minus
+  Minus,
+  CheckCircle2,
+  Hand
 } from 'lucide-react';
-import { QuestionGroup, Quiz, QuizConfig } from '../types/quiz';
+import { FormulaType, QuestionGroup, Quiz, QuizConfig } from '../types/quiz';
 import { quizService } from '../services/quizService';
-import { generateSingleQuestion } from '../utils/mathGenerator';
+import { generateSingleQuestion, getFormulaTypeLabel } from '../utils/mathGenerator';
 import { sound } from '../utils/audio';
 
 interface QuizBuilderProps {
@@ -30,12 +32,14 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
       numbersCount: 3, // 3 numbers per question
       digitsCount: 2,  // 2 digits per number
       questionCount: 10,
+      formulaType: 'normal',
     },
     {
       id: 'grp_2',
       numbersCount: 4, // 4 numbers per question
       digitsCount: 2,  // 2 digits per number
       questionCount: 10,
+      formulaType: 'normal',
     },
   ]);
 
@@ -49,38 +53,63 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
   }, [groups]);
 
   // Quick Preset Handlers
-  const applyPreset1Digit = () => {
+  const applyPresetSimple = () => {
     setGroups([
       {
         id: `grp_${Date.now()}_1`,
         numbersCount: 3,
         digitsCount: 1,
         questionCount: 10,
+        formulaType: 'simple',
       },
       {
         id: `grp_${Date.now()}_2`,
         numbersCount: 4,
         digitsCount: 1,
         questionCount: 10,
+        formulaType: 'simple',
       },
     ]);
     setTimeMinutes(3);
     sound.playClick();
   };
 
-  const applyPreset2DigitSpeed = () => {
+  const applyPresetFive = () => {
+    setGroups([
+      {
+        id: `grp_${Date.now()}_1`,
+        numbersCount: 3,
+        digitsCount: 1,
+        questionCount: 10,
+        formulaType: 'five',
+      },
+      {
+        id: `grp_${Date.now()}_2`,
+        numbersCount: 4,
+        digitsCount: 1,
+        questionCount: 10,
+        formulaType: 'five',
+      },
+    ]);
+    setTimeMinutes(3);
+    sound.playClick();
+  };
+
+  const applyPresetNormalSpeed = () => {
     setGroups([
       {
         id: `grp_${Date.now()}_1`,
         numbersCount: 3,
         digitsCount: 2,
         questionCount: 10,
+        formulaType: 'normal',
       },
       {
         id: `grp_${Date.now()}_2`,
         numbersCount: 4,
         digitsCount: 2,
         questionCount: 10,
+        formulaType: 'normal',
       },
     ]);
     setTimeMinutes(4);
@@ -94,6 +123,7 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
         numbersCount: 5,
         digitsCount: 2,
         questionCount: 15,
+        formulaType: 'normal',
       },
     ]);
     setTimeMinutes(5);
@@ -108,6 +138,7 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
       numbersCount: 3,
       digitsCount: 2,
       questionCount: 10,
+      formulaType: 'normal',
     };
     setGroups([...groups, newGroup]);
   };
@@ -123,7 +154,7 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
   const handleUpdateGroup = (
     id: string,
     field: keyof QuestionGroup,
-    value: number
+    value: number | string | FormulaType
   ) => {
     setGroups(
       groups.map((g) => {
@@ -139,12 +170,28 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
   const sampleQuestions = useMemo(() => {
     const list = [];
     for (const g of groups) {
-      list.push(generateSingleQuestion(g.numbersCount, g.digitsCount));
+      list.push(
+        generateSingleQuestion(
+          g.numbersCount,
+          g.digitsCount,
+          g.id,
+          undefined,
+          g.formulaType || 'normal'
+        )
+      );
       if (list.length >= 3) break;
     }
     while (list.length < 3 && groups.length > 0) {
       const g = groups[0];
-      list.push(generateSingleQuestion(g.numbersCount, g.digitsCount));
+      list.push(
+        generateSingleQuestion(
+          g.numbersCount,
+          g.digitsCount,
+          g.id,
+          undefined,
+          g.formulaType || 'normal'
+        )
+      );
     }
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -154,10 +201,20 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
     e.preventDefault();
     sound.playVictory();
 
-    // Auto-generate clean title based on groups
+    // Auto-generate clean title based on groups & formula types
     const rowsSummary = Array.from(new Set(groups.map((g) => `${g.numbersCount} Rows`))).join(' & ');
     const digitsSummary = Array.from(new Set(groups.map((g) => `${g.digitsCount}-Digit`))).join(' & ');
-    const autoTitle = `Mental Math Quiz (${totalQuestions} Qs · ${rowsSummary} · ${digitsSummary}) - kidscenter PRO`;
+    
+    const formulaSummary = Array.from(
+      new Set(
+        groups.map((g) => {
+          const t = g.formulaType || 'normal';
+          return t === 'simple' ? 'بسيطة' : t === 'five' ? 'معادلات 5' : 'عادية';
+        })
+      )
+    ).join(' + ');
+
+    const autoTitle = `Mental Math (${totalQuestions} Qs · ${rowsSummary} · ${digitsSummary} · ${formulaSummary}) - kidscenter PRO`;
 
     const config: QuizConfig = {
       title: autoTitle,
@@ -178,13 +235,13 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
       <div className="text-center mb-6">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold mb-2">
           <Calculator className="w-3.5 h-3.5" />
-          <span>Vertical Mental Math · Addition & Subtraction</span>
+          <span>Vertical Mental Math · Addition & Subtraction (معادلات بسيطة / 5 / عادية)</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tight">
           Create Mental Math Quiz
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-lg mx-auto font-medium">
-          Configure number of rows, digit lengths, and automatic single subtraction row with vertical display
+          حدد لكل سيكشن نوع المعادلات (معادلات بسيطة، معادلات 5، أو عادية)، وعدد الأرقام والصفوف
         </p>
       </div>
 
@@ -192,26 +249,34 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
       <div className="flex flex-wrap items-center justify-center gap-2 mb-6">
         <button
           type="button"
-          onClick={applyPreset1Digit}
-          className="px-3 py-1.5 rounded-full text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition-colors flex items-center gap-1.5 cursor-pointer"
+          onClick={applyPresetSimple}
+          className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-colors flex items-center gap-1.5 cursor-pointer"
         >
-          <span>⭐ 10 Qs (3 Rows · 1-Digit) + 10 Qs (4 Rows · 1-Digit)</span>
+          <span>🟢 معادلات بسيطة: 10 Qs (3 صفوف) + 10 Qs (4 صفوف) · رقم 1</span>
         </button>
 
         <button
           type="button"
-          onClick={applyPreset2DigitSpeed}
-          className="px-3 py-1.5 rounded-full text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors flex items-center gap-1.5 card-soft-black-shadow cursor-pointer"
+          onClick={applyPresetFive}
+          className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 transition-colors flex items-center gap-1.5 cursor-pointer"
         >
-          <span>🎯 Speed Math (3 Rows & 4 Rows · 2 Digits)</span>
+          <span>🖐️ معادلات الـ 5: 10 Qs (3 صفوف) + 10 Qs (4 صفوف) · رقم 1</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={applyPresetNormalSpeed}
+          className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors flex items-center gap-1.5 card-soft-black-shadow cursor-pointer"
+        >
+          <span>⚡ معادلات عادية: 3 & 4 صفوف · رقمين (Speed Math)</span>
         </button>
 
         <button
           type="button"
           onClick={applyPresetAdvanced}
-          className="px-3 py-1.5 rounded-full text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors flex items-center gap-1.5 card-soft-black-shadow cursor-pointer"
+          className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-colors flex items-center gap-1.5 card-soft-black-shadow cursor-pointer"
         >
-          <span>🔥 Advanced: 15 Qs (5 Rows · 2 Digits)</span>
+          <span>🔥 متقدم عادي: 15 Qs (5 صفوف · رقمين)</span>
         </button>
       </div>
 
@@ -224,10 +289,10 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <span className="text-sm font-black text-slate-900 block">
-                Quiz Question Sections:
+                Quiz Question Sections (أقسام الامتحان):
               </span>
               <span className="text-[11px] text-slate-400">
-                Each question features stacked rows with exactly 1 subtraction number smaller than the number above it
+                يمكنك تخصيص نوع المعادلات (بسيطة / معادلات 5 / عادية) وعدد الصفوف لكل سيكشن على حدة
               </span>
             </div>
 
@@ -242,122 +307,231 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
           </div>
 
           {/* Groups List */}
-          <div className="space-y-4">
-            {groups.map((group, idx) => (
-              <div
-                key={group.id}
-                className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-5 relative transition-all"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center">
-                      {idx + 1}
-                    </span>
-                    <span className="text-xs font-bold text-slate-800">
-                      Section {idx + 1}
-                    </span>
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1">
-                      <Minus className="w-2.5 h-2.5" />
-                      <span>1 Subtraction Row Included</span>
-                    </span>
-                  </div>
-
-                  {groups.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveGroup(group.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-full hover:bg-rose-50 transition-colors"
-                      title="Delete this section"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  
-                  {/* Numbers Count (Rows per question) */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Numbers in Question (Rows):
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="2"
-                        max="10"
-                        value={group.numbersCount}
-                        onChange={(e) =>
-                          handleUpdateGroup(group.id, 'numbersCount', Number(e.target.value))
-                        }
-                        className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 text-center text-sm font-black math-font text-slate-900 outline-none"
-                      />
-                      <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
-                        rows
+          <div className="space-y-5">
+            {groups.map((group, idx) => {
+              const currentFormula = group.formulaType || 'normal';
+              return (
+                <div
+                  key={group.id}
+                  className="bg-slate-50 border border-slate-200 rounded-3xl p-4 sm:p-5 relative transition-all"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-black text-xs flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <span className="text-xs font-bold text-slate-800">
+                        Section {idx + 1}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold flex items-center gap-1">
+                        <Minus className="w-2.5 h-2.5" />
+                        <span>1 Subtraction Row Included</span>
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                        currentFormula === 'simple'
+                          ? 'bg-emerald-100/70 text-emerald-800 border-emerald-300'
+                          : currentFormula === 'five'
+                          ? 'bg-indigo-100/70 text-indigo-800 border-indigo-300'
+                          : 'bg-slate-200 text-slate-700 border-slate-300'
+                      }`}>
+                        {currentFormula === 'simple' ? '🟢 بسيطة' : currentFormula === 'five' ? '🖐️ معادلات 5' : '⚡ عادية'}
                       </span>
                     </div>
-                    <span className="text-[10px] text-slate-400 block mt-0.5 text-center">
-                      (e.g. 3 numbers stacked vertically)
-                    </span>
+
+                    {groups.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveGroup(group.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-full hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Delete this section"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
 
-                  {/* Digits Count */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Digits per Number:
+                  {/* FORMULA TYPE SELECTOR (نوع المعادلات داخل السيكشن) */}
+                  <div className="mb-4 bg-white border border-slate-200/90 rounded-2xl p-3 shadow-xs">
+                    <label className="block text-xs font-bold text-slate-800 mb-2 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>نوع المعادلات داخل هذا السيكشن (Formula Type):</span>
                     </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max="5"
-                        value={group.digitsCount}
-                        onChange={(e) =>
-                          handleUpdateGroup(group.id, 'digitsCount', Number(e.target.value))
-                        }
-                        className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 text-center text-sm font-black math-font text-slate-900 outline-none"
-                      />
-                      <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
-                        digits
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* Option 1: معادلات بسيطة */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleUpdateGroup(group.id, 'formulaType', 'simple');
+                          sound.playClick();
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          currentFormula === 'simple'
+                            ? 'bg-emerald-50/90 border-emerald-500 text-emerald-950 ring-2 ring-emerald-400/30 shadow-xs'
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs flex items-center gap-1">
+                            <span>🟢 معادلات بسيطة</span>
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 font-extrabold">
+                            مباشر
+                          </span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 leading-snug">
+                          جمع وطرح مباشر على الخرزات بدون استخدام أي مكملات
+                        </p>
+                      </button>
+
+                      {/* Option 2: معادلات الـ 5 */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleUpdateGroup(group.id, 'formulaType', 'five');
+                          sound.playClick();
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          currentFormula === 'five'
+                            ? 'bg-indigo-50/90 border-indigo-500 text-indigo-950 ring-2 ring-indigo-400/30 shadow-xs'
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs flex items-center gap-1">
+                            <span>🖐️ معادلات الـ 5</span>
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-extrabold">
+                            أصدقاء 5
+                          </span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 leading-snug">
+                          قواعد ومكملات الـ 5 (+1=+5-4، -1=+4-5 ومكملات 2، 3، 4)
+                        </p>
+                      </button>
+
+                      {/* Option 3: معادلات عادية */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleUpdateGroup(group.id, 'formulaType', 'normal');
+                          sound.playClick();
+                        }}
+                        className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          currentFormula === 'normal'
+                            ? 'bg-slate-900 border-slate-900 text-white shadow-xs ring-2 ring-slate-900/20'
+                            : 'bg-slate-50 border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-xs flex items-center gap-1">
+                            <span>⚡ معادلات عادية</span>
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-extrabold ${
+                            currentFormula === 'normal' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                          }`}>
+                            شاملة
+                          </span>
+                        </div>
+                        <p className={`text-[10.5px] leading-snug ${
+                          currentFormula === 'normal' ? 'text-slate-300' : 'text-slate-500'
+                        }`}>
+                          شاملة وعامة زي الوقتي (أرقام عشوائية عامة وكافة القواعد)
+                        </p>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    
+                    {/* Numbers Count (Rows per question) */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Numbers in Question (Rows):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="2"
+                          max="10"
+                          value={group.numbersCount}
+                          onChange={(e) =>
+                            handleUpdateGroup(group.id, 'numbersCount', Number(e.target.value))
+                          }
+                          className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 text-center text-sm font-black math-font text-slate-900 outline-none"
+                        />
+                        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
+                          rows
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5 text-center">
+                        (e.g. 3 numbers stacked vertically)
                       </span>
                     </div>
-                    <span className="text-[10px] text-slate-400 block mt-0.5 text-center">
-                      ({group.digitsCount === 1 ? '1 digit: 1-9' : group.digitsCount === 2 ? '2 digits: 10-99' : `${group.digitsCount} digits`})
-                    </span>
-                  </div>
 
-                  {/* Question Count */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                      Questions Count:
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="1"
-                        max="50"
-                        value={group.questionCount}
-                        onChange={(e) =>
-                          handleUpdateGroup(group.id, 'questionCount', Number(e.target.value))
-                        }
-                        className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 text-center text-sm font-black math-font text-indigo-600 outline-none"
-                      />
-                      <span className="text-xs font-semibold text-indigo-600 whitespace-nowrap">
-                        questions
+                    {/* Digits Count */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Digits per Number:
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="5"
+                          value={group.digitsCount}
+                          onChange={(e) =>
+                            handleUpdateGroup(group.id, 'digitsCount', Number(e.target.value))
+                          }
+                          className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 text-center text-sm font-black math-font text-slate-900 outline-none"
+                        />
+                        <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">
+                          digits
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5 text-center">
+                        ({group.digitsCount === 1 ? '1 digit: 1-9' : group.digitsCount === 2 ? '2 digits: 10-99' : `${group.digitsCount} digits`})
                       </span>
                     </div>
-                    <span className="text-[10px] text-slate-400 block mt-0.5 text-center">
-                      problems in this section
-                    </span>
+
+                    {/* Question Count */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Questions Count:
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="50"
+                          value={group.questionCount}
+                          onChange={(e) =>
+                            handleUpdateGroup(group.id, 'questionCount', Number(e.target.value))
+                          }
+                          className="w-full bg-white border border-slate-200 focus:border-indigo-500 rounded-xl px-3 py-2 text-center text-sm font-black math-font text-indigo-600 outline-none"
+                        />
+                        <span className="text-xs font-semibold text-indigo-600 whitespace-nowrap">
+                          questions
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 block mt-0.5 text-center">
+                        problems in this section
+                      </span>
+                    </div>
+
                   </div>
 
+                  <div className="mt-2 text-left text-[11px] text-slate-500 font-semibold flex items-center justify-between">
+                    <span>
+                      Preview: {group.numbersCount} stacked rows of {group.digitsCount}-digit numbers ({group.questionCount} questions)
+                    </span>
+                    <span className="text-indigo-600 font-bold">
+                      {getFormulaTypeLabel(currentFormula)}
+                    </span>
+                  </div>
                 </div>
-
-                <div className="mt-2 text-left text-[11px] text-slate-500 font-semibold">
-                  Preview: {group.numbersCount} stacked rows of {group.digitsCount}-digit numbers ({group.questionCount} questions)
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Time & Total Questions Bar */}
@@ -419,9 +593,20 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
                   key={idx}
                   className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-sm flex flex-col items-center justify-between"
                 >
-                  <span className="text-[10px] text-slate-400 font-bold block mb-2">
-                    Sample {idx + 1} ({q.numbersCount} Rows · {q.digitsCount} Digits)
-                  </span>
+                  <div className="flex items-center justify-between w-full mb-2">
+                    <span className="text-[10px] text-slate-400 font-bold">
+                      Sample {idx + 1} ({q.numbersCount}R · {q.digitsCount}D)
+                    </span>
+                    <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold ${
+                      q.formulaType === 'simple'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : q.formulaType === 'five'
+                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}>
+                      {q.formulaType === 'simple' ? 'بسيطة' : q.formulaType === 'five' ? 'معادلات 5' : 'عادية'}
+                    </span>
+                  </div>
 
                   {/* Vertical Column Problem */}
                   <div className="w-32 bg-slate-50/70 border border-slate-200/60 rounded-xl p-3 flex flex-col items-end math-font font-black text-xl text-slate-900">
@@ -451,7 +636,7 @@ export const QuizBuilder: React.FC<QuizBuilderProps> = ({
             </div>
             
             <p className="text-[11px] text-slate-400 mt-2 text-center">
-              ✓ Subtraction row has <strong className="text-rose-600">-</strong> sign and is strictly smaller than the number directly above it. Positive numbers have no sign.
+              ✓ Subtraction row has <strong className="text-rose-600">-</strong> sign and is strictly smaller than the number directly above it.
             </p>
           </div>
 

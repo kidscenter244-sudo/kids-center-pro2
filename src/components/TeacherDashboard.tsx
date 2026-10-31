@@ -15,11 +15,22 @@ import {
   X,
   Database,
   Filter,
-  BookOpen
+  BookOpen,
+  LayoutGrid,
+  ListFilter,
+  ExternalLink,
+  Settings,
+  Clock
 } from 'lucide-react';
 import { Quiz, QuizSubmission } from '../types/quiz';
 import { quizService } from '../services/quizService';
-import { SUPABASE_SQL_SCHEMA } from '../services/supabaseService';
+import { 
+  SUPABASE_SQL_SCHEMA, 
+  getStoredSupabaseConfig, 
+  saveStoredSupabaseConfig, 
+  testSupabaseConnection, 
+  getSupabaseClient 
+} from '../services/supabaseService';
 import { sound } from '../utils/audio';
 
 interface TeacherDashboardProps {
@@ -41,17 +52,49 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [internalFilter, setInternalFilter] = useState<string>(selectedQuizFilter);
+  const [viewMode, setViewMode] = useState<'filter' | 'grouped'>('filter');
   const [inspectSubmission, setInspectSubmission] = useState<QuizSubmission | null>(null);
   const [copiedReport, setCopiedReport] = useState(false);
-  const [isSqlModalOpen, setIsSqlModalOpen] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Supabase Settings & SQL Modal
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [supabaseUrlInput, setSupabaseUrlInput] = useState('');
+  const [supabaseKeyInput, setSupabaseKeyInput] = useState('');
+  const [supabaseTestStatus, setSupabaseTestStatus] = useState<{ success: boolean; message: string } | null>(null);
+  const [isTestingSupabase, setIsTestingSupabase] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   useEffect(() => {
     if (selectedQuizFilter !== undefined) {
       setInternalFilter(selectedQuizFilter);
     }
   }, [selectedQuizFilter]);
+
+  const handleOpenSupabaseModal = () => {
+    const cfg = getStoredSupabaseConfig();
+    setSupabaseUrlInput(cfg.url || '');
+    setSupabaseKeyInput(cfg.anonKey || '');
+    setSupabaseTestStatus(null);
+    setIsSupabaseModalOpen(true);
+    sound.playClick();
+  };
+
+  const handleSaveSupabase = async () => {
+    saveStoredSupabaseConfig({
+      url: supabaseUrlInput.trim(),
+      anonKey: supabaseKeyInput.trim(),
+    });
+    sound.playClick();
+    setIsTestingSupabase(true);
+    const res = await testSupabaseConnection(supabaseUrlInput.trim(), supabaseKeyInput.trim());
+    setIsTestingSupabase(false);
+    setSupabaseTestStatus(res);
+    if (res.success) {
+      quizService.syncWithSupabase().catch(() => {});
+      onRefresh();
+    }
+  };
 
   const handleFilterChange = (quizId: string) => {
     setInternalFilter(quizId);
@@ -61,9 +104,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   // Combine quizzes from props and quizzes referenced in submissions
   const allAvailableQuizzes = useMemo(() => {
-    const map = new Map<string, { id: string; title: string; code: string }>();
+    const map = new Map<string, { id: string; title: string; code: string; quiz?: Quiz }>();
     quizzes.forEach((q) => {
-      map.set(q.id, { id: q.id, title: q.config.title || `Quiz ${q.code}`, code: q.code });
+      map.set(q.id, { id: q.id, title: q.config.title || `Quiz ${q.code}`, code: q.code, quiz: q });
     });
     submissions.forEach((s) => {
       if (!map.has(s.quizId)) {
@@ -87,7 +130,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
   }, [submissions, searchTerm, internalFilter]);
 
-  // Specific submissions count per quiz
+  // Submissions count per quiz
   const submissionsCountByQuiz = useMemo(() => {
     const counts: Record<string, number> = {};
     submissions.forEach((s) => {
@@ -96,7 +139,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     return counts;
   }, [submissions]);
 
-  // KPIs computed for the currently filtered view
+  // Group submissions by quizId for the 'grouped' view
+  const groupedSubmissions = useMemo(() => {
+    const map: Record<string, QuizSubmission[]> = {};
+    submissions.forEach((sub) => {
+      if (!map[sub.quizId]) {
+        map[sub.quizId] = [];
+      }
+      if (!searchTerm || sub.studentName.toLowerCase().includes(searchTerm.toLowerCase())) {
+        map[sub.quizId].push(sub);
+      }
+    });
+    return map;
+  }, [submissions, searchTerm]);
+
+  // KPIs computed for currently filtered view
   const currentTotal = filteredSubmissions.length;
   const currentAverageAccuracy = useMemo(() => {
     if (currentTotal === 0) return 0;
@@ -139,7 +196,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       new Date(s.submittedAt).toLocaleString('en-US'),
     ]);
 
-    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csvContent = '﻿' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -158,14 +215,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       ? `Quiz "${currentSelectedQuiz.title}"` 
       : `All Quizzes Combined`;
 
-    let text = `📊 kidscenter PRO - Mental Math Quiz Results Report\n`;
-    text += `Target: ${scopeTitle}\n`;
-    text += `Total Students: ${filteredSubmissions.length}\n`;
-    text += `Average Score: ${currentAverageAccuracy}%\n\n`;
-    text += `🏆 Student Leaderboard:\n`;
+    let text = `📊 kidscenter PRO - Mental Math Quiz Results Report
+`;
+    text += `Target: ${scopeTitle}
+`;
+    text += `Total Students: ${filteredSubmissions.length}
+`;
+    text += `Average Score: ${currentAverageAccuracy}%
+
+`;
+    text += `🏆 Student Leaderboard:
+`;
 
     filteredSubmissions.forEach((s, idx) => {
-      text += `${idx + 1}. ${s.studentName} - Score: ${s.score}/${s.totalQuestions} (${s.percentage}%) - in ${Math.floor(s.timeSpentSeconds / 60)}m ${s.timeSpentSeconds % 60}s\n`;
+      text += `${idx + 1}. ${s.studentName} - Score: ${s.score}/${s.totalQuestions} (${s.percentage}%) - in ${Math.floor(s.timeSpentSeconds / 60)}m ${s.timeSpentSeconds % 60}s
+`;
     });
 
     navigator.clipboard.writeText(text);
@@ -173,25 +237,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setTimeout(() => setCopiedReport(false), 2500);
   };
 
-  const handleCopySql = () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
-    sound.playClick();
-    setCopiedSql(true);
-    setTimeout(() => setCopiedSql(false), 2500);
-  };
-
   // Delete all submissions for the selected quiz (or all quizzes) and permanently sync with Supabase
-  const handleClearSubmissions = async () => {
-    const isSpecific = internalFilter !== 'all' && currentSelectedQuiz;
+  const handleClearSubmissions = async (targetQuizId?: string, targetQuizTitle?: string) => {
+    const isSpecific = Boolean(targetQuizId);
+    const title = targetQuizTitle || (currentSelectedQuiz ? currentSelectedQuiz.title : '');
     const confirmMsg = isSpecific
-      ? `هل أنت متأكد من مسح جميع استجابات اختبار "${currentSelectedQuiz.title}"؟\nسيتم مسحها نهائياً من الموقع وقاعدة بيانات سوبابيس ولن تظهر مرة أخرى حتى بعد إعادة تحميل الصفحة.`
-      : `هل أنت متأكد من مسح جميع استجابات الطلاب لجميع الاختبارات؟\nسيتم مسحها نهائياً من الموقع ومن قاعدة بيانات سوبابيس.`;
+      ? `هل أنت متأكد من مسح جميع استجابات اختبار "${title}"؟
+سيتم مسحها نهائياً من الموقع ومن قاعدة بيانات سوبابيس (Supabase) ولن تظهر مرة أخرى عند إعادة التحميل.`
+      : `هل أنت متأكد من مسح جميع استجابات الطلاب لجميع الاختبارات؟
+سيتم مسحها نهائياً من الموقع ومن قاعدة بيانات سوبابيس.`;
 
     if (confirm(confirmMsg)) {
       try {
         setIsDeleting(true);
-        if (isSpecific) {
-          await quizService.clearSubmissions(currentSelectedQuiz.id);
+        if (isSpecific && targetQuizId) {
+          await quizService.clearSubmissions(targetQuizId);
         } else {
           await quizService.clearSubmissions();
         }
@@ -208,7 +268,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   // Delete a single student's submission from both local storage and Supabase
   const handleDeleteSingleSubmission = async (sub: QuizSubmission) => {
-    if (confirm(`هل أنت متأكد من مسح استجابة الطالب "${sub.studentName}"؟\nسيتم مسحها نهائياً من الموقع وسوبابيس.`)) {
+    if (confirm(`هل أنت متأكد من مسح استجابة الطالب "${sub.studentName}"؟
+سيتم مسحها نهائياً من الموقع ومن سوبابيس.`)) {
       try {
         await quizService.deleteSubmission(sub.id);
         onRefresh();
@@ -220,51 +281,95 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
+  const isSupabaseConfigured = Boolean(getSupabaseClient());
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 sm:py-10 animate-in fade-in duration-300">
       
-      {/* Supabase SQL Modal */}
-      {isSqlModalOpen && (
+      {/* Supabase Database Settings Modal */}
+      {isSupabaseModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white border border-slate-200 rounded-[32px] w-full max-w-xl overflow-hidden card-soft-black-shadow">
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Database className="w-4 h-4 text-emerald-600" />
                 <h3 className="text-sm font-black text-slate-900">
-                  Supabase Database SQL Schema
+                  Supabase Cloud Database Settings
                 </h3>
               </div>
               <button
-                onClick={() => setIsSqlModalOpen(false)}
+                onClick={() => setIsSupabaseModalOpen(false)}
                 className="p-1.5 text-slate-400 hover:text-slate-700 rounded-full bg-slate-200/60 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <div className="p-6">
-              <p className="text-xs text-slate-600 mb-3">
-                Copy this dedicated PostgreSQL SQL script and execute it in your Supabase SQL Editor to create the tables, indexes, and Row Level Security policies:
-              </p>
-
-              <div className="bg-slate-900 text-slate-100 rounded-2xl p-4 font-mono text-xs max-h-60 overflow-y-auto mb-4 border border-slate-800">
-                <pre>{SUPABASE_SQL_SCHEMA}</pre>
+            <div className="p-6 space-y-4">
+              <div className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs">
+                <span className="font-bold text-slate-700">Connection Status:</span>
+                <span className={`px-2.5 py-1 rounded-full font-bold ${
+                  isSupabaseConfigured 
+                    ? 'bg-emerald-100 text-emerald-800' 
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {isSupabaseConfigured ? '🟢 Connected to Supabase' : '🟡 Offline / Local Cache Only'}
+                </span>
               </div>
 
-              <div className="flex items-center justify-between">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Supabase Project URL:
+                </label>
+                <input
+                  type="text"
+                  value={supabaseUrlInput}
+                  onChange={(e) => setSupabaseUrlInput(e.target.value)}
+                  placeholder="https://xyzcompany.supabase.co"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Supabase Anon Key:
+                </label>
+                <input
+                  type="password"
+                  value={supabaseKeyInput}
+                  onChange={(e) => setSupabaseKeyInput(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 outline-none focus:border-indigo-500 font-mono"
+                />
+              </div>
+
+              {supabaseTestStatus && (
+                <div className={`p-3 rounded-xl text-xs font-semibold ${
+                  supabaseTestStatus.success ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                }`}>
+                  {supabaseTestStatus.message}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2">
                 <button
-                  onClick={handleCopySql}
-                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors cursor-pointer"
+                  onClick={handleSaveSupabase}
+                  disabled={isTestingSupabase}
+                  className="flex-1 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
                 >
-                  {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedSql ? 'SQL Script Copied!' : 'Copy SQL Script'}</span>
+                  {isTestingSupabase ? 'Testing & Saving...' : 'Save & Test Connection'}
                 </button>
 
                 <button
-                  onClick={() => setIsSqlModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 cursor-pointer"
+                  onClick={() => {
+                    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA);
+                    setCopiedSql(true);
+                    setTimeout(() => setCopiedSql(false), 2000);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
                 >
-                  Close
+                  {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedSql ? 'SQL Copied!' : 'Copy SQL'}</span>
                 </button>
               </div>
             </div>
@@ -350,20 +455,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             Student Submissions & Results
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            {currentSelectedQuiz
-              ? `Displaying specific submissions for: "${currentSelectedQuiz.title}"`
+            {viewMode === 'grouped'
+              ? 'Displaying each quiz with its own dedicated student responses below'
+              : currentSelectedQuiz
+              ? `Displaying submissions specifically for: "${currentSelectedQuiz.title}"`
               : 'Displaying submissions across all quizzes'}
           </p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => setIsSqlModalOpen(true)}
+            onClick={handleOpenSupabaseModal}
             className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors card-soft-black-shadow cursor-pointer"
-            title="View Supabase SQL schema"
+            title="Configure or view Supabase integration"
           >
             <Database className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Supabase SQL</span>
+            <span>Supabase Sync</span>
           </button>
 
           <button
@@ -397,20 +504,47 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       </div>
 
-      {/* QUIZ SELECTOR BAR (Tabs per Quiz) */}
-      <div className="bg-white border border-slate-200/90 rounded-[28px] p-3 mb-6 card-soft-black-shadow">
-        <div className="flex items-center justify-between mb-2 px-1">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-            <Filter className="w-3.5 h-3.5 text-indigo-600" />
-            <span>Select Quiz to View Submissions (تصفية حسب الاختبار):</span>
+      {/* VIEW MODE SWITCHER & QUIZ SELECTOR BAR */}
+      <div className="bg-white border border-slate-200/90 rounded-[28px] p-4 mb-6 card-soft-black-shadow space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-700">Display View Mode:</span>
+            <div className="flex items-center p-1 bg-slate-100 rounded-xl">
+              <button
+                onClick={() => {
+                  setViewMode('filter');
+                  sound.playClick();
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'filter' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <ListFilter className="w-3.5 h-3.5" />
+                <span>Selected Quiz Filter</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setViewMode('grouped');
+                  sound.playClick();
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'grouped' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>All Quizzes Separated (كل اختبار بقسمه)</span>
+              </button>
+            </div>
           </div>
-          <span className="text-[11px] text-slate-400 font-medium">
-            Total Submissions: {submissions.length}
+
+          <span className="text-xs text-slate-400 font-medium">
+            Total Student Submissions: <strong className="text-slate-800 math-font">{submissions.length}</strong>
           </span>
         </div>
 
+        {/* Quiz Pills Filter */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
-          {/* Option: All Quizzes */}
           <button
             onClick={() => handleFilterChange('all')}
             className={`px-3.5 py-2 rounded-2xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 shrink-0 ${
@@ -427,7 +561,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </span>
           </button>
 
-          {/* Option per individual Quiz */}
           {allAvailableQuizzes.map((q) => {
             const count = submissionsCountByQuiz[q.id] || 0;
             const isSelected = internalFilter === q.id;
@@ -461,7 +594,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       </div>
 
       {/* Active Filter Info Banner with Clear Button */}
-      {currentSelectedQuiz && (
+      {viewMode === 'filter' && currentSelectedQuiz && (
         <div className="bg-indigo-50/70 border border-indigo-100 rounded-[24px] p-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 font-bold">
@@ -479,7 +612,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 )}
               </div>
               <p className="text-[11px] text-indigo-700/80">
-                Viewing only the {currentTotal} submissions belonging specifically to this quiz.
+                Viewing only the {currentTotal} student submissions belonging specifically to this quiz.
               </p>
             </div>
           </div>
@@ -487,7 +620,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             {currentTotal > 0 && (
               <button
-                onClick={handleClearSubmissions}
+                onClick={() => handleClearSubmissions(currentSelectedQuiz.id, currentSelectedQuiz.title)}
                 disabled={isDeleting}
                 className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
               >
@@ -577,7 +710,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
           {filteredSubmissions.length > 0 && (
             <button
-              onClick={handleClearSubmissions}
+              onClick={() => handleClearSubmissions(currentSelectedQuiz?.id, currentSelectedQuiz?.title)}
               disabled={isDeleting}
               className="flex items-center gap-1.5 px-3 py-2 text-rose-600 hover:text-rose-700 rounded-2xl bg-rose-50 hover:bg-rose-100 transition-colors cursor-pointer text-xs font-bold"
               title={currentSelectedQuiz ? "Clear this quiz's submissions" : "Clear all submissions"}
@@ -589,92 +722,229 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </div>
       </div>
 
-      {/* Submissions List */}
-      {filteredSubmissions.length === 0 ? (
-        <div className="bg-white border border-slate-200/90 rounded-[32px] p-10 text-center card-soft-black-shadow">
-          <h3 className="text-base font-bold text-slate-900 mb-1">
-            {currentSelectedQuiz
-              ? `No Submissions Yet for "${currentSelectedQuiz.title}"`
-              : 'No Student Submissions Yet'}
-          </h3>
-          <p className="text-xs text-slate-500 mb-4 max-w-sm mx-auto">
-            Share the quiz link or access code with students. Results and student responses will appear here in real-time.
-          </p>
-          <button
-            onClick={onGoToBuilder}
-            className="px-5 py-2.5 bg-slate-900 text-white rounded-2xl font-bold text-xs cursor-pointer"
-          >
-            Create a New Quiz
-          </button>
-        </div>
-      ) : (
-        <div className="bg-white border border-slate-200/90 rounded-[32px] overflow-hidden card-soft-black-shadow">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
-                <tr>
-                  <th className="py-3 px-4">#</th>
-                  <th className="py-3 px-4">Student Name</th>
-                  <th className="py-3 px-4">Quiz Title</th>
-                  <th className="py-3 px-4">Score</th>
-                  <th className="py-3 px-4">Accuracy</th>
-                  <th className="py-3 px-4">Time Taken</th>
-                  <th className="py-3 px-4">Submitted At</th>
-                  <th className="py-3 px-4 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredSubmissions.map((sub, idx) => (
-                  <tr key={sub.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="py-3 px-4 text-slate-400 font-mono">{idx + 1}</td>
-                    <td className="py-3 px-4 font-bold text-slate-900 text-sm">
-                      {sub.studentName}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 font-medium">{sub.quizTitle}</td>
-                    <td className="py-3 px-4 font-black math-font text-slate-900 text-sm">
-                      {sub.score} / {sub.totalQuestions}
-                    </td>
-                    <td className="py-3 px-4 font-bold math-font">
-                      <span className={`px-2 py-0.5 rounded-lg text-xs ${
-                        sub.percentage >= 80 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
-                      }`}>
-                        {sub.percentage}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 math-font text-slate-600">
-                      {Math.floor(sub.timeSpentSeconds / 60)}m {sub.timeSpentSeconds % 60}s
-                    </td>
-                    <td className="py-3 px-4 text-slate-400 text-[11px]">
-                      {new Date(sub.submittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1.5">
-                        <button
-                          onClick={() => {
-                            setInspectSubmission(sub);
-                            sound.playClick();
-                          }}
-                          className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
-                          title="View detailed student answers"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>View</span>
-                        </button>
-
-                        <button
-                          onClick={() => handleDeleteSingleSubmission(sub)}
-                          className="p-1 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                          title="Delete this student submission permanently"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* VIEW MODE 1: SINGLE FILTERED TABLE */}
+      {viewMode === 'filter' && (
+        filteredSubmissions.length === 0 ? (
+          <div className="bg-white border border-slate-200/90 rounded-[32px] p-10 text-center card-soft-black-shadow">
+            <h3 className="text-base font-bold text-slate-900 mb-1">
+              {currentSelectedQuiz
+                ? `No Submissions Yet for "${currentSelectedQuiz.title}"`
+                : 'No Student Submissions Yet'}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4 max-w-sm mx-auto">
+              Share the quiz link or access code with students. Results and student responses will appear here in real-time.
+            </p>
+            <button
+              onClick={onGoToBuilder}
+              className="px-5 py-2.5 bg-slate-900 text-white rounded-2xl font-bold text-xs cursor-pointer"
+            >
+              Create a New Quiz
+            </button>
           </div>
+        ) : (
+          <div className="bg-white border border-slate-200/90 rounded-[32px] overflow-hidden card-soft-black-shadow">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                  <tr>
+                    <th className="py-3 px-4">#</th>
+                    <th className="py-3 px-4">Student Name</th>
+                    <th className="py-3 px-4">Quiz Title</th>
+                    <th className="py-3 px-4">Score</th>
+                    <th className="py-3 px-4">Accuracy</th>
+                    <th className="py-3 px-4">Time Taken</th>
+                    <th className="py-3 px-4">Submitted At</th>
+                    <th className="py-3 px-4 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {filteredSubmissions.map((sub, idx) => (
+                    <tr key={sub.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="py-3 px-4 text-slate-400 font-mono">{idx + 1}</td>
+                      <td className="py-3 px-4 font-bold text-slate-900 text-sm">
+                        {sub.studentName}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 font-medium">{sub.quizTitle}</td>
+                      <td className="py-3 px-4 font-black math-font text-slate-900 text-sm">
+                        {sub.score} / {sub.totalQuestions}
+                      </td>
+                      <td className="py-3 px-4 font-bold math-font">
+                        <span className={`px-2 py-0.5 rounded-lg text-xs ${
+                          sub.percentage >= 80 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                        }`}>
+                          {sub.percentage}%
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 math-font text-slate-600">
+                        {Math.floor(sub.timeSpentSeconds / 60)}m {sub.timeSpentSeconds % 60}s
+                      </td>
+                      <td className="py-3 px-4 text-slate-400 text-[11px]">
+                        {new Date(sub.submittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setInspectSubmission(sub);
+                              sound.playClick();
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                            title="View detailed student answers"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>View</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteSingleSubmission(sub)}
+                            className="p-1 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Delete this student submission permanently"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      )}
+
+      {/* VIEW MODE 2: GROUPED PER QUIZ (كل اختبار في قسم منفصل) */}
+      {viewMode === 'grouped' && (
+        <div className="space-y-6">
+          {allAvailableQuizzes.map((quizMeta) => {
+            const quizSubs = groupedSubmissions[quizMeta.id] || [];
+            return (
+              <div
+                key={quizMeta.id}
+                className="bg-white border border-slate-200/90 rounded-[32px] overflow-hidden card-soft-black-shadow"
+              >
+                {/* Quiz Section Header */}
+                <div className="p-5 sm:p-6 bg-slate-50/70 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      {quizMeta.code && (
+                        <span className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 font-mono text-xs font-bold uppercase">
+                          {quizMeta.code}
+                        </span>
+                      )}
+                      <h3 className="text-base font-bold text-slate-900">
+                        {quizMeta.title}
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      <span>Total Submissions: <strong className="text-slate-800 math-font">{quizSubs.length}</strong></span>
+                      {quizMeta.quiz && (
+                        <>
+                          <span>·</span>
+                          <span>Questions: {quizMeta.quiz.questions.length}</span>
+                          <span>·</span>
+                          <span>Time Limit: {quizMeta.quiz.config.timeMinutes === 0 ? 'Unlimited' : `${quizMeta.quiz.config.timeMinutes}m`}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {quizSubs.length > 0 && (
+                      <button
+                        onClick={() => handleClearSubmissions(quizMeta.id, quizMeta.title)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-colors cursor-pointer border border-rose-200"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>مسح استجابات هذا الامتحان ({quizSubs.length})</span>
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setViewMode('filter');
+                        handleFilterChange(quizMeta.id);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white text-slate-700 hover:text-slate-900 border border-slate-200 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Focus View
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submissions Table for this specific Quiz */}
+                {quizSubs.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-400">
+                    لم يقم أي طالب بتقديم هذا الاختبار حتى الآن. شارك رابط الاختبار مع الطلاب لتظهر نتائجهم هنا.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-white border-b border-slate-100 text-slate-500 font-bold">
+                        <tr>
+                          <th className="py-2.5 px-4">#</th>
+                          <th className="py-2.5 px-4">Student Name</th>
+                          <th className="py-2.5 px-4">Score</th>
+                          <th className="py-2.5 px-4">Accuracy</th>
+                          <th className="py-2.5 px-4">Time Taken</th>
+                          <th className="py-2.5 px-4">Submitted At</th>
+                          <th className="py-2.5 px-4 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700">
+                        {quizSubs.map((sub, idx) => (
+                          <tr key={sub.id} className="hover:bg-slate-50/60 transition-colors">
+                            <td className="py-2.5 px-4 text-slate-400 font-mono">{idx + 1}</td>
+                            <td className="py-2.5 px-4 font-bold text-slate-900 text-sm">
+                              {sub.studentName}
+                            </td>
+                            <td className="py-2.5 px-4 font-black math-font text-slate-900 text-sm">
+                              {sub.score} / {sub.totalQuestions}
+                            </td>
+                            <td className="py-2.5 px-4 font-bold math-font">
+                              <span className={`px-2 py-0.5 rounded-lg text-xs ${
+                                sub.percentage >= 80 ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                              }`}>
+                                {sub.percentage}%
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 math-font text-slate-600">
+                              {Math.floor(sub.timeSpentSeconds / 60)}m {sub.timeSpentSeconds % 60}s
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-400 text-[11px]">
+                              {new Date(sub.submittedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
+                            </td>
+                            <td className="py-2.5 px-4 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  onClick={() => {
+                                    setInspectSubmission(sub);
+                                    sound.playClick();
+                                  }}
+                                  className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                                  <span>View</span>
+                                </button>
+
+                                <button
+                                  onClick={() => handleDeleteSingleSubmission(sub)}
+                                  className="p-1 rounded-xl bg-slate-100 hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                  title="Delete this student submission"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
